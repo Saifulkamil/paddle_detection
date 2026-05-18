@@ -17,7 +17,8 @@ This plugin supports real-time detection directly from the camera feed, photo ca
 - 🔄 **Switch Camera**: Toggle between front and back camera.
 - 📱 **Orientation Aware**: Camera preview rotates with device physical orientation (app stays portrait).
 - 🎛️ **Runtime Model Loading**: Pick and load custom models from device storage at runtime.
-- 🧠 **Auto Class Detection**: Number of classes and label names detected automatically.
+- 🏷️ **Dynamic Labels**: Load class names from `labels.txt` (asset or device file). No hardcoded labels.
+- 🧠 **Auto Class Detection**: Number of classes detected automatically from model structure.
 - ⚡ **GPU Acceleration**: Optional Vulkan GPU inference with auto-detection of GPU availability.
 - 📴 **100% Offline**: Uses local NCNN models. No API calls or cloud dependencies.
 - 🔋 **Optimized Performance**: Minimal bitmap copies per frame, on-demand capture allocation.
@@ -267,6 +268,9 @@ await detector.dispose();
 | `getGpuCount()` | Get number of GPU devices |
 | `setAntiSpoof(enabled)` | Enable/disable screen detection (anti-spoof) |
 | `getAntiSpoof()` | Check if anti-spoof is enabled |
+| `setLabels(labels)` | Set custom label names for the model |
+| `loadLabelsFromAsset(fileName)` | Load label names from assets text file |
+| `loadLabelsFromFile(path)` | Load label names from device storage text file |
 | `detect(imagePath)` | Run detection on image file |
 | `detectFromBytes(data, width, height)` | Run detection on raw RGBA bytes |
 | `startCamera()` | Start native camera, returns texture info |
@@ -335,9 +339,20 @@ For models exported **without** post-processing. All layers are standard ncnn op
 
 ### Labels
 
-- **2-class model** → labels: "LCK", "SCR" (green, purple)
+- **2-class model** → labels: "LCK", "SCR" (or whatever is in your labels.txt)
 - **80-class model** → labels: COCO names (person, bicycle, car, cup, etc.)
-- Auto-detected from `num_class` at runtime
+- **Custom model** → provide a `labels.txt` file (one name per line, order = class index)
+- Auto-loaded from `labels.txt` in assets at startup
+- Can be picked from device storage at runtime
+
+**labels.txt format:**
+```
+person
+bicycle
+car
+...
+```
+(Line 0 = class 0, line 1 = class 1, etc.)
 
 ---
 

@@ -322,6 +322,26 @@ void PicoDet::_detect_input_format()
         input_format = 1; score_blob_name = "317"; box_blob_name = "339";
         LOGD("_detect_input_format: Format A (in0=meta4, in1=pixels)");
     }
+
+    // Detect num_class via dummy inference for Format A/B
+    {
+        ncnn::Mat dummy_pixels(target_size, target_size, 3, (size_t)4u);
+        dummy_pixels.fill(0.f);
+        ncnn::Mat dummy_meta4(4);
+        { float* p = (float*)dummy_meta4.data; p[0] = 320; p[1] = 320; p[2] = 1.0f; p[3] = 1.0f; }
+        ncnn::Mat dummy_meta2(2);
+        { float* p = (float*)dummy_meta2.data; p[0] = 1.0f; p[1] = 1.0f; }
+
+        ncnn::Extractor ex = picodet_net.create_extractor();
+        if (input_format == 2) { ex.input("in0", dummy_pixels); ex.input("in1", dummy_meta2); }
+        else { ex.input("in0", dummy_meta4); ex.input("in1", dummy_pixels); }
+
+        ncnn::Mat scores;
+        if (ex.extract(score_blob_name.c_str(), scores) == 0 && scores.w > 0 && scores.h > 0) {
+            num_class = std::min(scores.w, scores.h);
+            LOGD("_detect_input_format: num_class=%d from scores shape (w=%d h=%d)", num_class, scores.w, scores.h);
+        }
+    }
 }
 
 // ============================================================================
@@ -510,26 +530,53 @@ int PicoDet::detect(const cv::Mat& rgb, std::vector<DetObject>& objects)
         return -1;
     }
 
-    int num_anchors = scores.w;
-    int nc = scores.h;
+    // Determine which dim is num_class vs num_anchors
+    // num_class is always much smaller than num_anchors
+    int num_anchors, nc;
+    bool scores_transposed; // true if scores layout is [w=nc, h=anchors] instead of [w=anchors, h=nc]
+    if (scores.w > scores.h) {
+        num_anchors = scores.w;
+        nc = scores.h;
+        scores_transposed = false; // row = class, col = anchor
+    } else {
+        num_anchors = scores.h;
+        nc = scores.w;
+        scores_transposed = true; // row = anchor, col = class
+    }
     num_class = nc;
 
-    if (boxes.w != 4 || boxes.h != num_anchors) {
-        LOGE("boxes shape mismatch: w=%d h=%d expected w=4 h=%d", boxes.w, boxes.h, num_anchors);
+    // Verify boxes shape
+    bool boxes_match = false;
+    bool boxes_transposed = false;
+    if (boxes.w == 4 && boxes.h == num_anchors) { boxes_match = true; boxes_transposed = false; }
+    else if (boxes.h == 4 && boxes.w == num_anchors) { boxes_match = true; boxes_transposed = true; }
+    if (!boxes_match) {
+        LOGE("boxes shape mismatch: w=%d h=%d (anchors=%d)", boxes.w, boxes.h, num_anchors);
         return -3;
     }
+
+    LOGD("scores: w=%d h=%d → nc=%d anchors=%d transposed=%d", scores.w, scores.h, nc, num_anchors, scores_transposed);
 
     std::vector<DetObject> proposals;
     proposals.reserve(256);
     for (int a = 0; a < num_anchors; a++)
     {
         int best_label = 0; float best_score = -FLT_MAX;
-        for (int k = 0; k < nc; k++) { float s = at2d(scores, k, a); if (s > best_score) { best_score = s; best_label = k; } }
+        for (int k = 0; k < nc; k++) {
+            float s = scores_transposed ? scores.row(a)[k] : scores.row(k)[a];
+            if (s > best_score) { best_score = s; best_label = k; }
+        }
         if (best_score < prob_threshold) continue;
-        const float* row = boxes.row(a);
-        if (row[2] <= row[0] || row[3] <= row[1]) continue;
+        const float* row = boxes_transposed ? nullptr : boxes.row(a);
+        float x1, y1, x2, y2;
+        if (boxes_transposed) {
+            x1 = boxes.row(0)[a]; y1 = boxes.row(1)[a]; x2 = boxes.row(2)[a]; y2 = boxes.row(3)[a];
+        } else {
+            x1 = row[0]; y1 = row[1]; x2 = row[2]; y2 = row[3];
+        }
+        if (x2 <= x1 || y2 <= y1) continue;
         DetObject obj; obj.label = best_label; obj.prob = best_score;
-        obj.rect.x = row[0]; obj.rect.y = row[1]; obj.rect.width = row[2]-row[0]; obj.rect.height = row[3]-row[1];
+        obj.rect.x = x1; obj.rect.y = y1; obj.rect.width = x2-x1; obj.rect.height = y2-y1;
         proposals.push_back(obj);
     }
 
@@ -673,7 +720,7 @@ bool PicoDet::is_from_screen(const cv::Mat& rgb)
 
 void PicoDet::draw_detections(cv::Mat& rgb, const std::vector<DetObject>& objects)
 {
-    // COCO 80 class names
+    // COCO 80 class names (fallback)
     static const char* coco_names[] = {
         "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat",
         "traffic light", "fire hydrant", "stop sign", "parking meter", "bench", "bird", "cat",
@@ -686,36 +733,37 @@ void PicoDet::draw_detections(cv::Mat& rgb, const std::vector<DetObject>& object
         "mouse", "remote", "keyboard", "cell phone", "microwave", "oven", "toaster", "sink",
         "refrigerator", "book", "clock", "vase", "scissors", "teddy bear", "hair drier", "toothbrush",
     };
-    static const char* custom2_names[] = {"LCK", "SCR"};
-
-    // Use num_class to determine label set
-    const bool use_custom = (num_class <= 2);
 
     for (size_t i = 0; i < objects.size(); i++)
     {
         const DetObject& obj = objects[i];
 
+        // Determine label name
+        char name_buf[64];
         const char* name;
-        cv::Scalar color;
 
-        if (use_custom && obj.label >= 0 && obj.label < 2)
+        if (!custom_labels.empty() && obj.label >= 0 && obj.label < (int)custom_labels.size())
         {
-            name = custom2_names[obj.label];
-            color = (obj.label == 0) ? cv::Scalar(0, 255, 0) : cv::Scalar(128, 0, 128);
+            // Use user-provided labels
+            name = custom_labels[obj.label].c_str();
         }
-        else if (!use_custom && obj.label >= 0 && obj.label < 80)
+        else if (num_class == 80 && obj.label >= 0 && obj.label < 80)
         {
+            // COCO model
             name = coco_names[obj.label];
-            int r = (obj.label * 67 + 50) % 256;
-            int g = (obj.label * 113 + 100) % 256;
-            int b = (obj.label * 37 + 150) % 256;
-            color = cv::Scalar(r, g, b);
         }
         else
         {
-            name = "?";
-            color = cv::Scalar(255, 255, 255);
+            // Generic: show "C{index}"
+            snprintf(name_buf, sizeof(name_buf), "C%d", obj.label);
+            name = name_buf;
         }
+
+        // Generate color from label index (deterministic)
+        int r = (obj.label * 67 + 50) % 200 + 55;
+        int g = (obj.label * 113 + 100) % 200 + 55;
+        int b = (obj.label * 37 + 150) % 200 + 55;
+        cv::Scalar color(r, g, b);
 
         // Draw rectangle
         int x1 = (int)obj.rect.x;

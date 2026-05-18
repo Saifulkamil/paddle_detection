@@ -489,6 +489,34 @@ Java_com_iweka_paddle_1detection_PaddleDetectionPlugin_nativeSetAntiSpoof(
 }
 
 // ============================================================================
+// JNI: nativeSetLabels
+// ============================================================================
+
+JNIEXPORT void JNICALL
+Java_com_iweka_paddle_1detection_PaddleDetectionPlugin_nativeSetLabels(
+    JNIEnv* env, jobject thiz, jobjectArray labels)
+{
+    ncnn::MutexLockGuard g(g_lock);
+    if (!g_picodet) return;
+
+    std::vector<std::string> labelVec;
+    if (labels != nullptr)
+    {
+        int len = env->GetArrayLength(labels);
+        for (int i = 0; i < len; i++)
+        {
+            jstring jstr = (jstring)env->GetObjectArrayElement(labels, i);
+            const char* str = env->GetStringUTFChars(jstr, nullptr);
+            labelVec.push_back(str);
+            env->ReleaseStringUTFChars(jstr, str);
+            env->DeleteLocalRef(jstr);
+        }
+    }
+    g_picodet->set_labels(labelVec);
+    LOGD("nativeSetLabels: %d labels set", (int)labelVec.size());
+}
+
+// ============================================================================
 // JNI: nativeIsAntiSpoofEnabled
 // ============================================================================
 

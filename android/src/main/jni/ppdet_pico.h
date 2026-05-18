@@ -46,6 +46,9 @@ public:
 
     int get_num_class() const { return num_class; }
 
+    // Set custom label names. If empty, uses built-in COCO/custom labels.
+    void set_labels(const std::vector<std::string>& labels) { custom_labels = labels; }
+
     int detect(const cv::Mat& rgb, std::vector<DetObject>& objects);
 
     // Anti-spoof: detect if image is from a screen/monitor.
@@ -80,6 +83,9 @@ protected:
 
     // FPN decode for format C
     int _detect_fpn(const ncnn::Mat& in_pad, float scale, int img_w, int img_h, std::vector<DetObject>& objects);
+
+    // Custom labels set from Dart
+    std::vector<std::string> custom_labels;
 };
 
 #endif // PPDET_PICO_H

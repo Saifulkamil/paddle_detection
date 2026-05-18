@@ -36,7 +36,7 @@ class _HomePageState extends State<HomePage> {
   String _status = 'Loading model...';
   double _threshold = 0.8;
   int _numClass = 0;
-  String? _customParamPath, _customBinPath;
+  String? _customParamPath, _customBinPath, _customLabelsPath;
   bool get _useCustom => _customParamPath != null && _customBinPath != null;
   int _tabIndex = 0;
   bool _gpuAvailable = false;
@@ -74,7 +74,19 @@ class _HomePageState extends State<HomePage> {
               binName: 'model_no_post_pro.ncnn.bin',
               cpuGpu: cpuGpu,
             );
-      if (info.success) await _detector.setThreshold(threshold: _threshold);
+      if (info.success) {
+        await _detector.setThreshold(threshold: _threshold);
+        // Load labels: custom file if picked, otherwise try asset
+        if (_customLabelsPath != null) {
+          try {
+            await _detector.loadLabelsFromFile(_customLabelsPath!);
+          } catch (_) {}
+        } else {
+          try {
+            await _detector.loadLabelsFromAsset('labels.txt');
+          } catch (_) {}
+        }
+      }
       final backend = _useGpu ? 'GPU' : 'CPU';
       setState(() {
         _modelLoaded = info.success;
@@ -122,10 +134,24 @@ class _HomePageState extends State<HomePage> {
     _loadModel();
   }
 
+  Future<void> _pickLabels() async {
+    final result = await FilePicker.platform.pickFiles(type: FileType.any, allowMultiple: false);
+    if (result == null || result.files.isEmpty || result.files.first.path == null) return;
+    _customLabelsPath = result.files.first.path;
+    try {
+      final labels = await _detector.loadLabelsFromFile(_customLabelsPath!);
+      _snack('Labels loaded: ${labels.length} (${labels.take(3).join(", ")}...)');
+    } catch (e) {
+      _snack('Failed: $e');
+      _customLabelsPath = null;
+    }
+  }
+
   void _useBundled() {
     setState(() {
       _customParamPath = null;
       _customBinPath = null;
+      _customLabelsPath = null;
       _modelLoaded = false;
     });
     _loadModel();
@@ -161,6 +187,7 @@ class _HomePageState extends State<HomePage> {
       },
       onPickModel: _pickParam,
       onPickBin: _pickBin,
+      onPickLabels: _pickLabels,
       onUseBundled: _useBundled,
       onReload: () {
         Navigator.pop(context);
@@ -703,7 +730,7 @@ class _SettingsSheet extends StatefulWidget {
   final ValueChanged<double> onThresholdChanged;
   final ValueChanged<bool> onGpuChanged;
   final ValueChanged<bool> onAntiSpoofChanged;
-  final VoidCallback onPickModel, onPickBin, onUseBundled, onReload;
+  final VoidCallback onPickModel, onPickBin, onPickLabels, onUseBundled, onReload;
   const _SettingsSheet({
     required this.threshold,
     required this.useCustom,
@@ -720,6 +747,7 @@ class _SettingsSheet extends StatefulWidget {
     required this.onAntiSpoofChanged,
     required this.onPickModel,
     required this.onPickBin,
+    required this.onPickLabels,
     required this.onUseBundled,
     required this.onReload,
   });
@@ -844,6 +872,12 @@ class _SettingsSheetState extends State<_SettingsSheet> {
               ),
             ),
           ],
+        ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: widget.loading ? null : widget.onPickLabels,
+          icon: const Icon(Icons.label_outline, size: 16),
+          label: const Text('Pick labels.txt'),
         ),
         const SizedBox(height: 8),
         Row(

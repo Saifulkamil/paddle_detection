@@ -127,6 +127,30 @@ class PaddleDetection {
     return result ?? false;
   }
 
+  /// Set custom label names for the loaded model.
+  /// Pass a list of class names matching the model's class indices.
+  /// Example: `['person', 'car', 'truck']` for a 3-class model.
+  /// Pass null or empty list to use built-in labels (COCO for 80-class, generic for others).
+  Future<void> setLabels(List<String>? labels) async {
+    await _methodChannel.invokeMethod('setLabels', {'labels': labels});
+  }
+
+  /// Load label names from a text file in Android assets.
+  /// File format: one label name per line.
+  /// Returns the list of labels loaded.
+  Future<List<String>> loadLabelsFromAsset(String fileName) async {
+    final result = await _methodChannel.invokeMapMethod<String, dynamic>('loadLabelsFromAsset', {'fileName': fileName});
+    return (result?['labels'] as List?)?.cast<String>() ?? [];
+  }
+
+  /// Load label names from a text file on device storage.
+  /// File format: one label name per line.
+  /// Returns the list of labels loaded.
+  Future<List<String>> loadLabelsFromFile(String path) async {
+    final result = await _methodChannel.invokeMapMethod<String, dynamic>('loadLabelsFromFile', {'path': path});
+    return (result?['labels'] as List?)?.cast<String>() ?? [];
+  }
+
   /// Detect objects in an image file.
   Future<List<DetectionResult>> detect(String imagePath) {
     return PaddleDetectionPlatform.instance.detect(imagePath: imagePath);

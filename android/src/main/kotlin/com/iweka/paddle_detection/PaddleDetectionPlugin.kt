@@ -81,6 +81,7 @@ class PaddleDetectionPlugin : FlutterPlugin, MethodChannel.MethodCallHandler,
     private external fun nativeGetGpuCount(): Int
     private external fun nativeSetAntiSpoof(enabled: Boolean)
     private external fun nativeIsAntiSpoofEnabled(): Boolean
+    private external fun nativeSetLabels(labels: Array<String>?)
     private external fun nativeDispose()
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
@@ -123,6 +124,32 @@ class PaddleDetectionPlugin : FlutterPlugin, MethodChannel.MethodCallHandler,
             "getGpuCount" -> result.success(nativeGetGpuCount())
             "setAntiSpoof" -> { nativeSetAntiSpoof(call.argument<Boolean>("enabled") ?: false); result.success(true) }
             "getAntiSpoof" -> result.success(nativeIsAntiSpoofEnabled())
+            "setLabels" -> {
+                val labels = call.argument<List<String>>("labels")
+                nativeSetLabels(labels?.toTypedArray())
+                result.success(true)
+            }
+            "loadLabelsFromAsset" -> {
+                val fileName = call.argument<String>("fileName") ?: return result.error("INVALID_ARGS", "fileName required", null)
+                try {
+                    val mgr = assetManager ?: return result.error("NO_CONTEXT", "AssetManager null", null)
+                    val labels = mgr.open(fileName).bufferedReader().readLines().filter { it.isNotBlank() }
+                    nativeSetLabels(labels.toTypedArray())
+                    result.success(mapOf("labels" to labels, "count" to labels.size))
+                } catch (e: Exception) {
+                    result.error("LABEL_ERROR", "Failed to load labels: ${e.message}", null)
+                }
+            }
+            "loadLabelsFromFile" -> {
+                val path = call.argument<String>("path") ?: return result.error("INVALID_ARGS", "path required", null)
+                try {
+                    val labels = java.io.File(path).readLines().filter { it.isNotBlank() }
+                    nativeSetLabels(labels.toTypedArray())
+                    result.success(mapOf("labels" to labels, "count" to labels.size))
+                } catch (e: Exception) {
+                    result.error("LABEL_ERROR", "Failed to load labels: ${e.message}", null)
+                }
+            }
             "startCamera" -> handleStartCamera(call, result)
             "stopCamera" -> { stopCamera(); result.success(true) }
             "toggleFlash" -> handleToggleFlash(call, result)
