@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.0.3
+
+### New Features
+- 🏷️ **Dynamic Labels from File**: Load class names from `labels.txt`
+  - `loadLabelsFromAsset('labels.txt')` — from Android assets
+  - `loadLabelsFromFile('/path/to/labels.txt')` — pick from device storage
+  - `setLabels(['class0', 'class1', ...])` — set programmatically
+  - No hardcoded label names — all driven by external file
+  - Pick labels button in settings UI
+
+### Bug Fixes
+- Fixed num_class always showing 2 for multi-class models (now uses dummy inference at load time)
+- Fixed scores/boxes tensor transpose detection (handles both `[w=nc, h=anchors]` and `[w=anchors, h=nc]`)
+- Fixed labels showing COCO names ("person", "bicycle") for custom finetune models
+- Fixed picked labels being overridden by asset labels on model reload
+
+### Improvements
+- Labels auto-loaded from `labels.txt` in assets at startup
+- Custom labels path persisted across model reloads
+- Reset labels when switching back to bundled model
+- C++ draw_detections now fully dynamic (uses custom_labels vector, falls back to COCO for 80-class, generic "C0" otherwise)
+
 ## 0.0.2
 
 ### New Features
@@ -7,12 +29,7 @@
   - Format A: Models with baked-in post-processing (finetune/custom, 2 inputs)
   - Format C: Models without post-processing (COCO pretrained, 1 input, recommended)
 - 🧠 **FPN Decode**: Full DFL softmax + expectation decode for no-postprocess models
-- 🏷️ **Dynamic Labels from File**: Load class names from `labels.txt` (asset or device file)
-  - `loadLabelsFromAsset('labels.txt')` — from Android assets
-  - `loadLabelsFromFile('/path/to/labels.txt')` — from device storage
-  - `setLabels(['class0', 'class1', ...])` — set programmatically
-  - No hardcoded label names in C++ — all driven by file
-- 🎛️ **Runtime Model Loading**: Pick .param, .bin, and labels.txt separately from device
+- 🎛️ **Runtime Model Loading**: Pick .param and .bin separately from device storage
 - ⚡ **GPU Toggle**: Switch CPU/GPU (Vulkan) from settings with auto-detection
 - 🛡️ **Anti-Spoof**: FFT moiré pattern detection to reject screen/monitor images
 - 📱 **Orientation Aware**: Camera preview rotates with device physical orientation
@@ -22,11 +39,9 @@
 ### Improvements
 - Optimized pipeline: reduced from 4 bitmap copies to 1 per frame
 - On-demand capture allocation (no per-frame overhead)
-- Auto num_class detection from model blob shape via dummy inference at load time
-- Handles transposed score/box tensors automatically (min/max dimension heuristic)
-- Separate .param, .bin, and labels.txt file picker buttons
+- Separate .param and .bin file picker buttons
 - GPU availability check before enabling toggle
-- `Resize` → `Interp` layer replacement documented for model conversion
+- `Resize` → `Interp` layer replacement documented
 
 ### Bug Fixes
 - Fixed bbox position mismatch in camera (draw in native C++)
@@ -38,17 +53,13 @@
 - Fixed GPU switch not responsive in settings sheet
 - Fixed model load failure due to mismatched .bin filename
 - Fixed Resize layer not supported (replaced with Interp in .param)
-- Fixed num_class showing 1600 instead of actual (min dimension heuristic)
-- Fixed labels showing COCO names for custom models (now file-driven)
-- Fixed num_class = 2 for 5-class model (dummy inference at load)
-- Fixed scores/boxes tensor transpose for different model exports
+- Fixed num_class showing 1600 instead of 80 (min dimension heuristic)
 
 ### Model Support
 - PP-PicoDet S/M/L (320×320)
 - COCO 80-class pretrained models (no postprocess)
 - Custom finetune models (any number of classes, with postprocess)
 - ONNX → NCNN via PNNX conversion documented
-- Labels loaded from external text file (not hardcoded)
 
 ## 0.0.1
 

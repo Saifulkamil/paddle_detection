@@ -1,6 +1,6 @@
 name: fast_paddle_detection
 description: "High-performance offline object detection plugin using PP-PicoDet + NCNN with native camera, anti-spoof, and GPU acceleration."
-version: 0.0.2
+version: 0.0.3
 homepage: https://github.com/AkmaljonMOBILEdev/fast_paddle_detection
 
 environment:
